@@ -36,7 +36,7 @@
   "max_num_vectors": 21,
   "prompt_len": 7,
   "prompt": "hard-simple",
-  "infonce_temperature" : 3000,
+  "infonce_temperature" : 1000.0,
   "infonce_lossfactor" : 0.5,
   "mlm_lossfactor" : 0.1
 }

@@ -247,7 +247,7 @@ class BERTMLMSentenceEncoderPrompt(nn.Module):
         try:
             out = self.info_nce_fc(V) # N x dim_C
             out = torch.matmul(out, C.t()) # N x N
-            out = torch.exp(out / temperature)
+            # out = torch.exp(out / temperature)
         except:
             print("V shape : ", V.shape)
             print("C shape : ", C.shape)
