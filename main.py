@@ -459,9 +459,11 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
                     neg_prototypes.requires_grad_ = False
                     neg_prototypes = neg_prototypes.squeeze() # [num_neg_prototypes, dim]
 
-                    f_pos = model.sentence_encoder.infoNCE_f(lmhead_output[i],rep[i])
-                    f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes)
-                    infoNCE_loss += -torch.log(f_pos / (f_pos + f_neg)).mean()
+                    f_pos = model.sentence_encoder.infoNCE_f(lmhead_output[i],rep[i] , temperature = config['infonce_temperature'])
+                    f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes , temperature = config['infonce_temperature'])
+                    f_concat = torch.cat([f_pos.unsqueeze(0),f_neg],dim = 0)
+
+                    infoNCE_loss += -torch.log(softmax(f_concat/abs(f_concat).max())[0])
             except Exception as e:
                 print(e.with_traceback())
                 print("no infoNCE_loss")
@@ -571,7 +573,6 @@ if __name__ == '__main__':
         'name': "ConPL",
         "task" : args.task,
         "shot" : "5",
-        "infonce_temperature" : config['infonce_temperature'],
         "infonce_lossfactor" : config['infonce_lossfactor'],
         "mlm_lossfactor" : config['mlm_lossfactor']
     }
