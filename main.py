@@ -315,8 +315,6 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
 
                     f_pos = model.sentence_encoder.infoNCE_f(lmhead_output[i],rep[i] , temperature = config['infonce_temperature'])
                     f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes , temperature = config['infonce_temperature'])
-                    # print("f_pos: ", f_pos.shape , f_pos)
-                    # print("f_neg: ", f_neg.shape)
                     f_concat = torch.cat([f_pos.unsqueeze(0),f_neg],dim = 0)
 
                     infoNCE_loss += -torch.log(softmax(f_concat/abs(f_concat).max())[0])
@@ -324,7 +322,6 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
                 print(e.with_traceback())
                 print("no infoNCE_loss")
             infoNCE_loss /= rep.shape[0]
-            print(f"f_pos: {f_pos} , f_neg: {f_neg} , infoNCE_loss: {infoNCE_loss}")
             # --- add info_nce loss ---
 
             # --- add mlm loss ---
