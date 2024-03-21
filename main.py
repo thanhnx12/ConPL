@@ -568,7 +568,7 @@ if __name__ == '__main__':
 
     wandb.init(
     project = 'DATN',
-
+    name = f"ConPL_{args.task}_{args.shot}_{config['infonce_lossfactor']}_{config['mlm_lossfactor']}",
     config = {
         'name': "ConPL",
         "task" : args.task,
