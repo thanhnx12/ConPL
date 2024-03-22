@@ -1,0 +1,5 @@
+transformers==4.20.0
+wordninja
+wandb
+scikit-learn
+numpy==1.23.0
