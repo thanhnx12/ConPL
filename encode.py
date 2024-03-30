@@ -12,7 +12,7 @@ from transformers import BertTokenizer,BertModel
 from transformers import BertForMaskedLM
 from transformers.models.llama.modeling_llama import *
 from transformers.models.gemma.modeling_gemma import *
-class GemmaClassification(GemmaPreTrainedModel):
+class LlamaClassification(GemmaPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # self.num_labels = config.num_labels
@@ -97,12 +97,12 @@ class GemmaClassification(GemmaPreTrainedModel):
         # return self.dropout(logits)
         return output
     
-class GemmaLMClassification(GemmaPreTrainedModel):
+class LlamaLMClassification(GemmaPreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = GemmaModel(config)
+        self.model = LlamaModel(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.info_nce_fc = nn.Linear(config.vocab_size, config.hidden_size , bias= False)

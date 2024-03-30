@@ -6,7 +6,7 @@
   "embedding_dim": 300,
   "hidden_size": 100,
   "batch_size": 16,
-  "gradient_accumulation_steps": 4,
+  "gradient_accumulation_steps": 8,
   "num_clusters": 8,
   "epoch": 2,
   "random_seed": 100,

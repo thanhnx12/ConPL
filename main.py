@@ -627,7 +627,7 @@ if __name__ == '__main__':
     for m in range(donum):
         print(m)
 
-        encoderforbase = GemmaLMClassification.from_pretrained("google/gemma-2b",
+        encoderforbase = GemmaLMClassification.from_pretrained("meta-llama/Llama-2-7b-hf",
                                                                token="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",
                                                                device_map='auto')
         peft_config = LoraConfig(task_type=TaskType.SEQ_CLS,

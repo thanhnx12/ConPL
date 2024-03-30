@@ -1914,7 +1914,7 @@ class data_set_bert_prompt(Dataset):
         self.tokenizer1 = AutoTokenizer.from_pretrained('google-bert/bert-base-uncased',
                                                         token="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",
                                                         use_fast=False)
-        self.tokenizer2 = AutoTokenizer.from_pretrained('google/gemma-2b',
+        self.tokenizer2 = AutoTokenizer.from_pretrained('meta-llama/Llama-2-7b-hf',
                                                         token="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",
                                                         use_fast=False)
 
