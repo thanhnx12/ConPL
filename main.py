@@ -9,19 +9,17 @@ import json
 import gc
 from tqdm import tqdm
 from sklearn.cluster import KMeans
-from encode import BERTMLMSentenceEncoderPrompt
+from encode import GemmaLMClassification
 from dataprocess import data_sampler_bert_prompt_deal_first_task_sckd
 from model import proto_softmax_layer_bertmlm_prompt
 from dataprocess import get_data_loader_bert_prompt
 from util import set_seed
 import wandb
 import argparse
+from accelerate import Accelerator
+from peft import get_peft_model, LoraConfig, TaskType
 
-wandb.login(
-    anonymous = 'allow',
-    relogin = True,
-    key = '9e33535aa8c9fcaa7fc1dfa97a70d9de5107ad37'
-)
+
 
 def eval_model(config, basemodel, test_set, mem_relations,seen_relations_ids):
     basemodel.eval()
@@ -30,13 +28,11 @@ def eval_model(config, basemodel, test_set, mem_relations,seen_relations_ids):
     allnum= 0.0
     correctnum = 0.0
     with torch.no_grad():
-        for step, (labels, neg_labels, sentences, firstent, firstentindex, secondent, secondentindex, headid, tailid, rawtext, lengths,
-                typelabels, masks, mask_pos) in enumerate(test_dataloader):
+        for labels, input_ids, attention_mask, typelabels in tqdm(test_dataloader):
 
-            sentences = sentences.to(config['device'])
-            masks = masks.to(config['device'])
-            mask_pos = mask_pos.to(config['device'])
-            logits, rep , _ = basemodel(sentences, masks, mask_pos)
+            input_ids = input_ids.to(config['device'])
+            attention_mask = attention_mask.to(config['device'])
+            logits, rep , _ = basemodel(input_ids=input_ids, attention_mask=attention_mask)
 
             distances = basemodel.get_mem_feature(rep)
             short_logits = distances
@@ -67,12 +63,10 @@ def get_memory(config, model, proto_set):
         rangeset.append(rangeset[-1] + len(i))
     data_loader = get_data_loader_bert_prompt(config, memset, False, False)
     features = []
-    for step, (labels, neg_labels, sentences, firstent, firstentindex, secondent, secondentindex, headid, tailid, rawtext, lengths,
-               typelabels, masks, mask_pos) in enumerate(data_loader):
-        sentences = sentences.to(config['device'])
-        masks = masks.to(config['device'])
-        mask_pos = mask_pos.to(config['device'])
-        feature = model.get_feature(sentences, masks, mask_pos)
+    for labels, input_ids, attention_mask, typelabels in tqdm(data_loader):
+        input_ids = input_ids.to(config['device'])
+        attention_mask = attention_mask.to(config['device'])
+        feature = model.get_feature(input_ids, attention_mask)
         features.append(feature)
     features = np.concatenate(features)
 
@@ -98,12 +92,10 @@ def select_data(mem_set, proto_memory, config, model, divide_train_set, num_sel_
         thisdataset = divide_train_set[thisrel]
         data_loader = get_data_loader_bert_prompt(config, thisdataset, False, False)
         features = []
-        for step, (labels, neg_labels, sentences, firstent, firstentindex, secondent, secondentindex, headid, tailid, rawtext, lengths,
-                typelabels, masks, mask_pos) in enumerate(data_loader):
-            sentences = sentences.to(config['device'])
-            masks = masks.to(config['device'])
-            mask_pos = mask_pos.to(config['device'])
-            feature = model.get_feature(sentences, masks, mask_pos)
+        for labels, input_ids, attention_mask, typelabels in tqdm(data_loader):
+            input_ids = input_ids.to(config['device'])
+            attention_mask = attention_mask.to(config['device'])
+            feature = model.get_feature(input_ids, attention_mask)
             features.append(feature)
         features = np.concatenate(features)
         num_clusters = min(num_sel_data, len(thisdataset))
@@ -209,7 +201,7 @@ def select_data_all(mem_set, proto_memory, config, model, divide_train_set, num_
             mem_set[current_relations[i]]['1']['t'].extend(allnegres[togetnegrelname]['t'])
     return mem_set
 
-def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current_proto, seen_relation_ids, tokenizer, ifnegtive=0, threshold=0.2, use_loss5=True, only_mem=False):
+def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current_proto, seen_relation_ids, tokenizer, ifnegtive=0, threshold=0.2, use_loss5=True, only_mem=False, accum_iter=1):
     print('training data num: ' + str(len(traindata)))
     mem_data = []
     if len(mem_set) != 0:
@@ -222,12 +214,27 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
         train_set = traindata + mem_data
     print('all train data: ' + str(len(train_set)))
     data_loader = get_data_loader_bert_prompt(config, train_set, batch_size=config['batch_size_per_step'])
-    model.train()
+
+    # model.train()
+    trainable_params = []
+    for _, param in model.named_parameters():
+        if param.requires_grad == True:
+            trainable_params.append(param)
+
     criterion = nn.CrossEntropyLoss()
     mseloss = nn.MSELoss()
     softmax = nn.Softmax(dim=0)
     lossfn = nn.MultiMarginLoss(margin=0.2)
-    optimizer = optim.Adam(model.parameters(), config['learning_rate'])
+    # optimizer = optim.Adam(model.parameters(), config['learning_rate'])
+    optimizer = optim.Adam([{'params': trainable_params, 'lr': config['learning_rate']}])
+
+    accelerator = Accelerator()
+    model = accelerator.prepare_model(model)
+    
+    optimizer = accelerator.prepare_optimizer(optimizer)
+    data_loader = accelerator.prepare_data_loader(data_loader)
+
+
     for epoch_i in range(epochs):
         model.set_memorized_prototypes_midproto(current_proto)
         losses1 = []
@@ -246,9 +253,11 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
         else:
             lossesfactor5 = 0.0
         lossesfactor6 = 0.0
-        for step, (labels, neg_labels, sentences, firstent, firstentindex, secondent, secondentindex, headid, tailid, rawtext, lengths,
-            typelabels, masks, mask_pos) in enumerate(data_loader):
-            model.zero_grad()
+        losses = []
+        _loss = 0
+        for step, (labels, input_ids, attention_mask, typelabels) in enumerate(tqdm(data_loader)):
+            if step == 0:
+                optimizer.zero_grad()
             labels = labels.to(config['device'])
             typelabels = typelabels.to(config['device'])  ####0:rel  1:pos(new train data)  2:neg  3:mem
             numofmem = 0
@@ -263,10 +272,9 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
                     memindex.append(index)
                 allnum += 1
 
-            sentences = sentences.to(config['device'])
-            masks = masks.to(config['device'])
-            mask_pos = mask_pos.to(config['device'])
-            logits, rep , lmhead_output = model(sentences, masks, mask_pos)
+            input_ids = input_ids.to(config['device'])
+            attention_mask = attention_mask.to(config['device'])
+            logits, rep , lmhead_output = model(input_ids, attention_mask)
             logits_proto = model.mem_forward(rep)
 
             loss1 = criterion(logits, labels)
@@ -310,8 +318,20 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
                 for i in range(rep.shape[0]):
                     neg_prototypes = [prototypes[rel_id] for rel_id in seen_relations_ids if rel_id != labels[i].item()]
                     neg_prototypes = torch.stack(neg_prototypes)
-                    neg_prototypes.requires_grad_ = False
+                    neg_prototypes.requires_grad = False
                     neg_prototypes = neg_prototypes.squeeze() # [num_neg_prototypes, dim]
+
+                    # neg_prototypes = [prototype[rel_id] for rel_id in prototype.keys() if rel_id != origin_labels[i].item()]
+                    # neg_samples_grouped = [new_relation_data[rel_id] for rel_id in new_relation_data.keys() if rel_id != origin_labels[i].item()]
+                    # neg_samples = []
+                    # for neg in neg_samples_grouped:
+                    #     neg_samples.extend(neg)
+                    # random.shuffle(neg_samples)
+
+                    # contrastive_batch = 256
+                    # neg_samples = neg_samples[:contrastive_batch - len(neg_prototypes)]
+                    # neg_prototypes.extend(neg_samples)
+                    # neg_prototypes = torch.stack(neg_prototypes).to(mask_output.device)
 
                     f_pos = model.sentence_encoder.infoNCE_f(lmhead_output[i],rep[i] , temperature = config['infonce_temperature'])
                     f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes , temperature = config['infonce_temperature'])
@@ -322,7 +342,7 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
 
                     infoNCE_loss += -torch.log(softmax(f_concat )[0])
             except Exception as e:
-                print(e.with_traceback())
+                # print(e.with_traceback())
                 print("no infoNCE_loss")
             infoNCE_loss /= rep.shape[0]
             # --- add info_nce loss ---
@@ -355,7 +375,12 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
                 loss5 = loss5 / allusenum5
                 loss6 = loss6 / allusenum6
                 loss = loss1 * lossesfactor1 + loss2 * lossesfactor2 + loss3 * lossesfactor3 + loss4 * lossesfactor4 + loss5 * lossesfactor5 + loss6 * lossesfactor6   + infoNCE_loss * config['infonce_lossfactor'] + mlm_loss * config['mlm_lossfactor']###with loss5
-            loss.backward()
+            
+            # loss.backward()
+            loss = loss/accum_iter
+            _loss += loss.item()
+            accelerator.backward(loss)
+
             losses1.append(loss1.item())
             losses2.append(loss2.item())
             losses3.append(loss3.item())
@@ -363,13 +388,18 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
             losses5.append(loss5.item())
             losses6.append(loss6.item())
             # print(f" InfoNCE_loss: {infoNCE_loss.item()} , mlm_loss: {mlm_loss.item()}")
-            wandb.log({"Loss1": loss1.item(), "Loss2": loss2.item(), "Loss3": loss3.item(), "Loss4": loss4.item(), "Loss5": loss5.item(), "Loss6": loss6.item(), "InfoNCE_loss": infoNCE_loss.item(), "mlm_loss": mlm_loss.item()})
+            # wandb.log({"Loss1": loss1.item(), "Loss2": loss2.item(), "Loss3": loss3.item(), "Loss4": loss4.item(), "Loss5": loss5.item(), "Loss6": loss6.item(), "InfoNCE_loss": infoNCE_loss.item(), "mlm_loss": mlm_loss.item()})
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config['max_grad_norm'])#cxd
-            optimizer.step()
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), config['max_grad_norm'])#cxd
+            if ((step + 1) % accum_iter == 0) or (step + 1 == len(data_loader)):
+                losses.append(_loss)
+                _loss = 0
+                optimizer.step()
+                optimizer.zero_grad()
+            # optimizer.step()
         return model
 
-def train_memory(config, model, mem_set, train_set, epochs, current_proto, original_vocab_size,seen_relation_ids, ifusemem=True, threshold=0.2):
+def train_memory(config, model, mem_set, train_set, epochs, current_proto, original_vocab_size,seen_relation_ids, ifusemem=True, threshold=0.2, accum_iter=1):
     train_set = []
     if ifusemem:
         mem_data = []
@@ -378,12 +408,27 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
                 mem_data.extend(mem_set[key]['0'])
         train_set.extend(mem_data)
     data_loader = get_data_loader_bert_prompt(config, train_set, batch_size = config['batch_size_per_step'])
-    model.train()
+    
+    # model.train()
+    trainable_params = []
+    for _, param in model.named_parameters():
+        if param.requires_grad == True:
+            trainable_params.append(param)
+
     criterion = nn.CrossEntropyLoss()
     mseloss = nn.MSELoss()
     softmax = nn.Softmax(dim=0)
     lossfn = nn.MultiMarginLoss(margin=0.2)
-    optimizer = optim.Adam(model.parameters(), config['learning_rate'])#cxd
+
+    # optimizer = optim.Adam(model.parameters(), config['learning_rate'])#cxd
+    optimizer = optim.Adam([{'params': trainable_params, 'lr': config['learning_rate']}])
+
+    accelerator = Accelerator()
+    model = accelerator.prepare_model(model)
+    
+    optimizer = accelerator.prepare_optimizer(optimizer)
+    data_loader = accelerator.prepare_data_loader(data_loader)
+
     for epoch_i in range(epochs):
         model.set_memorized_prototypes_midproto(current_proto)
         losses1 = []
@@ -400,13 +445,17 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
         lossesfactor5 = 1.0
         lossesfactor6 = 1.0
 
-        for step, (labels, neg_labels, sentences, firstent, firstentindex, secondent, secondentindex, headid, tailid, rawtext,
-                   lengths, typelabels, masks, mask_pos) in enumerate(tqdm(data_loader)):
-            model.zero_grad()
-            sentences = sentences.to(config['device'])
-            masks = masks.to(config['device'])
-            mask_pos = mask_pos.to(config['device'])
-            logits, rep , lmhead_output = model(sentences, masks, mask_pos)
+        losses = []
+        _loss = 0
+
+        for step, (labels, input_ids, attention_mask, typelabels) in enumerate(tqdm(data_loader)):
+            # model.zero_grad()
+            if step == 0:
+                optimizer.zero_grad()
+
+            input_ids = input_ids.to(config['device'])
+            attention_mask = attention_mask.to(config['device'])
+            logits, rep , lmhead_output = model(input_ids, attention_mask)
             logits_proto = model.mem_forward(rep)
 
             labels = labels.to(config['device'])
@@ -459,7 +508,7 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
                 for i in range(rep.shape[0]):
                     neg_prototypes = [prototypes[rel_id] for rel_id in seen_relations_ids if rel_id != labels[i].item()]
                     neg_prototypes = torch.stack(neg_prototypes)
-                    neg_prototypes.requires_grad_ = False
+                    neg_prototypes.requires_grad = False
                     neg_prototypes = neg_prototypes.squeeze() # [num_neg_prototypes, dim]
 
                     f_pos = model.sentence_encoder.infoNCE_f(lmhead_output[i],rep[i] , temperature = config['infonce_temperature'])
@@ -471,7 +520,7 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
 
                     infoNCE_loss += -torch.log(softmax(f_concat)[0])
             except Exception as e:
-                print(e.with_traceback())
+                # print(e.with_traceback())
                 print("no infoNCE_loss")
             infoNCE_loss /= rep.shape[0]
 
@@ -486,16 +535,25 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
 
 
             loss = loss1 * lossesfactor1 + loss2 * lossesfactor2 + loss3 * lossesfactor3 + loss4 * lossesfactor4  + loss5 * lossesfactor5 + loss6 * lossesfactor6 + infoNCE_loss * config['infonce_lossfactor'] + mlm_loss * config['mlm_lossfactor']
-            loss.backward()
+            # loss.backward()
+            loss = loss/accum_iter
+            _loss += loss.item()
+            accelerator.backward(loss)
+
             losses1.append(loss1.item())
             losses2.append(loss2.item())
             losses3.append(loss3.item())
             losses4.append(loss4.item())
             losses5.append(loss5.item())
             losses6.append(loss6.item())
-            wandb.log({"Loss1": loss1.item(), "Loss2": loss2.item(), "Loss3": loss3.item(), "Loss4": loss4.item(), "Loss5": loss5.item(), "Loss6": loss6.item(), "InfoNCE_loss": infoNCE_loss.item(), "mlm_loss": mlm_loss.item()})
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config['max_grad_norm'])#cxd
-            optimizer.step()
+            # wandb.log({"Loss1": loss1.item(), "Loss2": loss2.item(), "Loss3": loss3.item(), "Loss4": loss4.item(), "Loss5": loss5.item(), "Loss6": loss6.item(), "InfoNCE_loss": infoNCE_loss.item(), "mlm_loss": mlm_loss.item()})
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), config['max_grad_norm'])#cxd
+            # optimizer.step()
+            if ((step + 1) % accum_iter == 0) or (step + 1 == len(data_loader)):
+                losses.append(_loss)
+                _loss = 0
+                optimizer.step()
+                optimizer.zero_grad()
     return model
 
 
@@ -560,37 +618,27 @@ if __name__ == '__main__':
     config['batch_size_per_step'] = int(config['batch_size'] / config["gradient_accumulation_steps"])
     config['neg_sampling'] = False
 
-
-    config['device'] = torch.device('cuda' if torch.cuda.is_available() and config['use_gpu'] else 'cpu')
-    config['n_gpu'] = torch.cuda.device_count()
-    config['batch_size_per_step'] = int(config['batch_size'] / config["gradient_accumulation_steps"])
-    config['neg_sampling'] = False
-
     config['first_task_k-way'] = 10
     config['k-shot'] = 5
     donum = 1
     epochs = 1
     threshold=0.1
 
-    wandb.init(
-    project = 'DATN',
-    name = f"ConPL_{args.task}_{args.shot}_{config['infonce_lossfactor']}_{config['mlm_lossfactor']}",
-    config = {
-        'name': "ConPL",
-        "task" : args.task,
-        "shot" : "5",
-        "infonce_lossfactor" : config['infonce_lossfactor'],
-        "mlm_lossfactor" : config['mlm_lossfactor']
-    }
-)
-
     for m in range(donum):
         print(m)
 
-        encoderforbase = BERTMLMSentenceEncoderPrompt(config)
+        encoderforbase = GemmaLMClassification.from_pretrained("google/gemma-2b",
+                                                               token="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",
+                                                               device_map='auto')
+        peft_config = LoraConfig(task_type=TaskType.SEQ_CLS,
+                                target_modules=["q_proj", "v_proj", "gate_proj", 'lm_head'],
+                                r=16,
+                                lora_alpha=32,
+                                lora_dropout=0.1,
+                                modules_to_save=["info_nce_fc"])
+        
+        encoderforbase = get_peft_model(encoderforbase, peft_config)
 
-        original_vocab_size = len(list(encoderforbase.tokenizer.get_vocab()))
-        print('Vocab size: %d'%original_vocab_size)
         if config["prompt"] == "hard-complex":
             template = 'the relation between e1 and e2 is mask . '
             print('Template: %s'%template)
@@ -601,7 +649,7 @@ if __name__ == '__main__':
             template = None
             print("no use soft prompt.")
         
-        sampler = data_sampler_bert_prompt_deal_first_task_sckd(config, encoderforbase.tokenizer, template)
+        sampler = data_sampler_bert_prompt_deal_first_task_sckd(config, 'sss', template)
         modelforbase = proto_softmax_layer_bertmlm_prompt(encoderforbase, num_class=len(sampler.id2rel), id2rel=sampler.id2rel, drop=0, config=config)
         modelforbase = modelforbase.to(config["device"])
 
@@ -613,7 +661,7 @@ if __name__ == '__main__':
 
         fr_all = []
         distored_all = []
-        for rou in range(6): #6 times different seeds to get average results
+        for rou in range(1): #6 times different seeds to get average results
 
             num_class = len(sampler.id2rel)
             print('random_seed: ' + str(config['random_seed'] + 100 * rou))
@@ -686,7 +734,7 @@ if __name__ == '__main__':
                 for j in range(1):
                     current_proto = get_memory(config, modelforbase, proto_memory)
                     modelforbase = train_model_with_hard_neg(config, modelforbase, mem_set, training_data, epochs,
-                                                                current_proto, tokenizer = encoderforbase.tokenizer,seen_relation_ids=seen_relations_ids, ifnegtive=0,threshold=threshold, use_loss5=False)
+                                                                current_proto, tokenizer = 'sss',seen_relation_ids=seen_relations_ids, ifnegtive=0,threshold=threshold, use_loss5=False, accum_iter=config["gradient_accumulation_steps"])
                 
                 select_data(mem_set, proto_memory, config, modelforbase, divide_train_set,
                             config['rel_memory_size'], current_relations_ids, 0)  ##config['rel_memory_size'] == 1 
@@ -702,11 +750,11 @@ if __name__ == '__main__':
                 for j in range(1):
                     current_proto = get_memory(config, modelforbase, proto_memory)
                     modelforbase = train_model_with_hard_neg(config, modelforbase, mem_set, training_data, epochs,
-                                                                current_proto, tokenizer = encoderforbase.tokenizer,seen_relation_ids=seen_relations_ids, ifnegtive=0,threshold=threshold)
+                                                                current_proto, tokenizer = 'sss',seen_relation_ids=seen_relations_ids, ifnegtive=0,threshold=threshold, accum_iter=config["gradient_accumulation_steps"])
                 
                 #add train memory
                 current_proto = get_memory(config, modelforbase, proto_memory)
-                modelforbase = train_memory(config, modelforbase, mem_set, training_data, epochs*3, current_proto, original_vocab_size,ifusemem= True,seen_relation_ids=seen_relations_ids, threshold=threshold)
+                modelforbase = train_memory(config, modelforbase, mem_set, training_data, epochs*3, current_proto, 32000,ifusemem= True,seen_relation_ids=seen_relations_ids, threshold=threshold, accum_iter=config["gradient_accumulation_steps"])
 
                 
                 current_proto = get_memory(config, modelforbase, proto_memory)
@@ -738,7 +786,7 @@ if __name__ == '__main__':
             allres = eval_model(config, modelforbase, savetest_all_data, saveseen_relations,seen_relations_ids) # eval on all test data of all tasks
             result_whole_test.append(allres)
 
-            print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
+            print("------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
             print("after one epoch allres whole:\t" + str(allres))
             print(result_whole_test)
 
@@ -749,14 +797,14 @@ if __name__ == '__main__':
             print(result_whole_test_average)
 
 
-            modelforbase = modelforbase.to('cpu')
-            del modelforbase
-            gc.collect()
-            if config['device'] == 'cuda':
-                torch.cuda.empty_cache()
-            encoderforbase = BERTMLMSentenceEncoderPrompt(config)
-            modelforbase = proto_softmax_layer_bertmlm_prompt(encoderforbase, num_class=len(sampler.id2rel), id2rel=sampler.id2rel, drop=0, config=config)
-            modelforbase = modelforbase.to(config["device"])
+            # modelforbase = modelforbase.to('cpu')
+            # del modelforbase
+            # gc.collect()
+            # if config['device'] == 'cuda':
+            #     torch.cuda.empty_cache()
+            # encoderforbase = BERTMLMSentenceEncoderPrompt(config)
+            # modelforbase = proto_softmax_layer_bertmlm_prompt(encoderforbase, num_class=len(sampler.id2rel), id2rel=sampler.id2rel, drop=0, config=config)
+            # modelforbase = modelforbase.to(config["device"])
         print("Final result: whole!")
         print(result_whole_test)
         for one in sequence_results:
