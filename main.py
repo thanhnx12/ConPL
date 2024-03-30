@@ -14,7 +14,6 @@ from dataprocess import data_sampler_bert_prompt_deal_first_task_sckd
 from model import proto_softmax_layer_bertmlm_prompt
 from dataprocess import get_data_loader_bert_prompt
 from util import set_seed
-import wandb
 import argparse
 from accelerate import Accelerator
 from peft import get_peft_model, LoraConfig, TaskType
@@ -388,7 +387,6 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
             losses5.append(loss5.item())
             losses6.append(loss6.item())
             # print(f" InfoNCE_loss: {infoNCE_loss.item()} , mlm_loss: {mlm_loss.item()}")
-            # wandb.log({"Loss1": loss1.item(), "Loss2": loss2.item(), "Loss3": loss3.item(), "Loss4": loss4.item(), "Loss5": loss5.item(), "Loss6": loss6.item(), "InfoNCE_loss": infoNCE_loss.item(), "mlm_loss": mlm_loss.item()})
 
             # torch.nn.utils.clip_grad_norm_(model.parameters(), config['max_grad_norm'])#cxd
             if ((step + 1) % accum_iter == 0) or (step + 1 == len(data_loader)):
@@ -546,7 +544,6 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
             losses4.append(loss4.item())
             losses5.append(loss5.item())
             losses6.append(loss6.item())
-            # wandb.log({"Loss1": loss1.item(), "Loss2": loss2.item(), "Loss3": loss3.item(), "Loss4": loss4.item(), "Loss5": loss5.item(), "Loss6": loss6.item(), "InfoNCE_loss": infoNCE_loss.item(), "mlm_loss": mlm_loss.item()})
             # torch.nn.utils.clip_grad_norm_(model.parameters(), config['max_grad_norm'])#cxd
             # optimizer.step()
             if ((step + 1) % accum_iter == 0) or (step + 1 == len(data_loader)):
@@ -770,7 +767,6 @@ if __name__ == '__main__':
                 results = [eval_model(config, modelforbase, item, mem_relations,seen_relations_ids) for item in seen_test_data_by_task] # results of all previous task + this task after training on current task
                 allresults_list.append(results)
                 results_average = np.array(results).mean() # average accuracy of all tasks after training on current task
-                wandb.log({f"Round {rou} Average Accuracy": results_average})
                 whole_acc.append(results_average)
 
                 #compute whole accuarcy
