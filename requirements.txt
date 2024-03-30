@@ -2,7 +2,7 @@ transformers
 wordninja
 wandb
 scikit-learn
-numpy==1.23.0
+numpy
 accelerate
 peft
 sentencepiece
