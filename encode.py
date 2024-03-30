@@ -80,7 +80,7 @@ class LlamaClassification(GemmaPreTrainedModel):
         e11 = []
         # for each sample in the batch, acquire the positions of its [E11] and [E21]
         for mask in attention_mask:
-            e11.append(mask.sum().item())
+            e11.append(mask.sum().item() - 1)
         
         output = []
 
@@ -181,7 +181,7 @@ class LlamaLMClassification(GemmaPreTrainedModel):
         e11 = []
         # for each sample in the batch, acquire the positions of its [E11] and [E21]
         for mask in attention_mask:
-            e11.append(mask.sum().item())
+            e11.append(mask.sum().item() - 1)
         
         output = []
         # for each sample in the batch, acquire its representations for [E11] and [E21]
