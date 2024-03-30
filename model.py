@@ -446,7 +446,7 @@ class proto_softmax_layer_bertmlm_prompt(base_model):
         self.flag = flag
         self.sentence_encoder = sentence_encoder
         self.num_class = num_class
-        self.hidden_size = self.sentence_encoder.output_size
+        self.hidden_size = self.sentence_encoder.hidden_size
         self.fc = nn.Linear(self.hidden_size, self.num_class, bias=False)
         self.drop = nn.Dropout(drop)
         self.id2rel = id2rel
@@ -466,22 +466,22 @@ class proto_softmax_layer_bertmlm_prompt(base_model):
             self.prototypes[self.haveseenrelations] = self.bestproto#cxd
 
 
-    def get_feature(self, sentences, mask, mask_pos):
-        rep , _ = self.sentence_encoder(sentences, mask, mask_pos)
+    def get_feature(self, input_ids, attention_mask):
+        rep , _ = self.sentence_encoder(input_ids, attention_mask)
         return rep.cpu().data.numpy()
 
     def get_mem_feature(self, rep):
         dis = self.mem_forward(rep)
         return dis.cpu().data.numpy()
 
-    def forward(self, sentences, mask, mask_pos):
+    def forward(self, input_ids, attention_mask):
         """
         Args:
             args: depends on the encoder
         Return:
             logits, (B, N)
         """
-        rep , lmhead_output = self.sentence_encoder(sentences, mask, mask_pos)  # (B, H)
+        rep , lmhead_output = self.sentence_encoder(input_ids, attention_mask)  # (B, H)
         repd = self.drop(rep)
         logits = self.fc(repd)
         return logits, rep , lmhead_output
