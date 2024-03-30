@@ -4,6 +4,7 @@ import wordninja
 import random
 import re
 from torch.utils.data import Dataset, DataLoader
+from transformers import AutoTokenizer
 
 class sequence_data_sampler(object):
 
@@ -219,7 +220,7 @@ class sequence_data_sampler_bert_prompt(object):
 
 class data_sampler(object):
 
-    def __init__(self, config=None, tokenizer=None, max_length=128, blank_padding=False):
+    def __init__(self, config, tokenizer, max_length=128, blank_padding=False):
         self.config = config
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -387,7 +388,7 @@ class data_sampler(object):
 
 class data_sampler_deal_first_task(object):
 
-    def __init__(self, config=None, tokenizer=None, max_length=128, blank_padding=False):
+    def __init__(self, config, tokenizer, max_length=128, blank_padding=False):
         self.config = config
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -576,7 +577,7 @@ class data_sampler_deal_first_task(object):
 
 class data_sampler_bert(object):
 
-    def __init__(self, config=None, tokenizer=None, max_length=128):
+    def __init__(self, config, tokenizer, max_length=128):
         self.config = config
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -869,7 +870,7 @@ class data_sampler_bert(object):
 
 class data_sampler_bert_deal_first_task(object):
 
-    def __init__(self, config=None, tokenizer=None, max_length=128):
+    def __init__(self, config, tokenizer, max_length=128):
         self.config = config
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -1184,7 +1185,7 @@ class data_sampler_bert_deal_first_task(object):
 
 class data_sampler_bert_prompt(object):
 
-    def __init__(self, config=None, tokenizer=None, template=None, max_length=128):
+    def __init__(self, config, tokenizer, template, max_length=128):
         self.config = config
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -1494,7 +1495,7 @@ class data_sampler_bert_prompt(object):
 
 class data_sampler_bert_prompt_deal_first_task(object):
 
-    def __init__(self, config=None, tokenizer=None, template=None, max_length=128):
+    def __init__(self, config, tokenizer, template, max_length=128):
         self.config = config
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -1910,6 +1911,12 @@ class data_set_bert_prompt(Dataset):
 
     def __init__(self, data):
         self.data = data
+        self.tokenizer1 = AutoTokenizer.from_pretrained('google-bert/bert-base-uncased',
+                                                        token="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",
+                                                        use_fast=False)
+        self.tokenizer2 = AutoTokenizer.from_pretrained('google/gemma-2b',
+                                                        token="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",
+                                                        use_fast=False)
 
     def __len__(self):
         return len(self.data)
@@ -1920,38 +1927,19 @@ class data_set_bert_prompt(Dataset):
     def collate_fn(self, data):
         #print(data[0])
         labels = torch.tensor([item[0] for item in data])
-        neg_labels = [torch.tensor(item[1]) for item in data]
-        sentences = torch.stack([torch.tensor(item[2]) for item in data]) #
-        #print(sentences.shape)
-        #print(sentences)
-        firstent = [torch.tensor(item[3]) for item in data]
-        firstentindex = [torch.tensor(item[4]) for item in data]
-        secondent = [torch.tensor(item[5]) for item in data]
-        secondentindex = [torch.tensor(item[6]) for item in data]
-        headid = [item[7] for item in data]
-        tailid = [item[8] for item in data]
-        rawtext = [item[9] for item in data]
-        lenghts = [torch.tensor(item[10]) for item in data]
+        new_texts = []
+        for item in data:
+            rawtext = item[9] + '\n' + f"Relation between '{self.tokenizer1.decode(item[3], skip_special_tokens=True)}' and '{self.tokenizer1.decode(item[5], skip_special_tokens=True)}' is"
+            new_texts.append(rawtext)
+        input_ids = self.tokenizer2(new_texts, return_tensors='pt', padding='max_length', truncation=True, max_length=256)
         typelabels =  torch.tensor([item[11] for item in data])
-        masks = torch.stack([torch.tensor(item[12]) for item in data]) #
-        mask_pos = torch.tensor([item[13] for item in data]) #
         #print(masks.shape)
         #print(masks)
         return (
             labels,
-            neg_labels,
-            sentences,
-            firstent,
-            firstentindex,
-            secondent,
-            secondentindex,
-            headid,
-            tailid,
-            rawtext,
-            lenghts,
-            typelabels,
-            masks,
-            mask_pos
+            input_ids['input_ids'],
+            input_ids['attention_mask'],
+            typelabels
         )
 
 def get_data_loader(config, data, shuffle = True, drop_last = False, batch_size = None):
@@ -2009,9 +1997,11 @@ def get_data_loader_bert_prompt(config, data, shuffle = True, drop_last = False,
 
 class data_sampler_bert_prompt_deal_first_task_sckd(object):
 
-    def __init__(self, config=None, tokenizer=None, template=None, max_length=128,seed = None):
+    def __init__(self, config, tokenizer, template, max_length=128,seed = None):
         self.config = config
-        self.tokenizer = tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained('google-bert/bert-base-uncased',
+                                                        token="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",
+                                                        use_fast=False)
         self.max_length = max_length
         self.template = template
         _, self.id2rel = self._read_relations(config['relation_file'])
