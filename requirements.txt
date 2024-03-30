@@ -1,5 +1,9 @@
-transformers==4.20.0
+transformers
 wordninja
 wandb
 scikit-learn
 numpy==1.23.0
+accelerate
+peft
+sentencepiece
+protobuf
