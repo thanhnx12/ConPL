@@ -395,6 +395,7 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
                 optimizer.step()
                 optimizer.zero_grad()
             # optimizer.step()
+        print(f"loss is {np.array(losses).mean()}")
         return model
 
 def train_memory(config, model, mem_set, train_set, epochs, current_proto, original_vocab_size,seen_relation_ids, ifusemem=True, threshold=0.2, accum_iter=1):
@@ -551,6 +552,7 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
                 _loss = 0
                 optimizer.step()
                 optimizer.zero_grad()
+        print(f"loss is {np.array(losses).mean()}")
     return model
 
 
