@@ -314,36 +314,36 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
             # --- add info_nce loss ---
             prototypes = model.prototypes.clone()
             infoNCE_loss = 0
-            try:
-                for i in range(rep.shape[0]):
-                    neg_prototypes = [prototypes[rel_id] for rel_id in seen_relations_ids if rel_id != labels[i].item()]
-                    neg_prototypes = torch.stack(neg_prototypes)
-                    neg_prototypes.requires_grad = False
-                    neg_prototypes = neg_prototypes.squeeze() # [num_neg_prototypes, dim]
+            # try:
+            for i in range(rep.shape[0]):
+                neg_prototypes = [prototypes[rel_id] for rel_id in seen_relations_ids if rel_id != labels[i].item()]
+                neg_prototypes = torch.stack(neg_prototypes)
+                neg_prototypes.requires_grad = False
+                neg_prototypes = neg_prototypes.squeeze() # [num_neg_prototypes, dim]
 
-                    # neg_prototypes = [prototype[rel_id] for rel_id in prototype.keys() if rel_id != origin_labels[i].item()]
-                    # neg_samples_grouped = [new_relation_data[rel_id] for rel_id in new_relation_data.keys() if rel_id != origin_labels[i].item()]
-                    # neg_samples = []
-                    # for neg in neg_samples_grouped:
-                    #     neg_samples.extend(neg)
-                    # random.shuffle(neg_samples)
+                # neg_prototypes = [prototype[rel_id] for rel_id in prototype.keys() if rel_id != origin_labels[i].item()]
+                # neg_samples_grouped = [new_relation_data[rel_id] for rel_id in new_relation_data.keys() if rel_id != origin_labels[i].item()]
+                # neg_samples = []
+                # for neg in neg_samples_grouped:
+                #     neg_samples.extend(neg)
+                # random.shuffle(neg_samples)
 
-                    # contrastive_batch = 256
-                    # neg_samples = neg_samples[:contrastive_batch - len(neg_prototypes)]
-                    # neg_prototypes.extend(neg_samples)
-                    # neg_prototypes = torch.stack(neg_prototypes).to(mask_output.device)
+                # contrastive_batch = 256
+                # neg_samples = neg_samples[:contrastive_batch - len(neg_prototypes)]
+                # neg_prototypes.extend(neg_samples)
+                # neg_prototypes = torch.stack(neg_prototypes).to(mask_output.device)
 
-                    f_pos = model.sentence_encoder.infoNCE_f(lmhead_output[i],rep[i] , temperature = config['infonce_temperature'])
-                    f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes , temperature = config['infonce_temperature'])
-                    f_concat = torch.cat([f_pos.unsqueeze(0),f_neg],dim = 0)
-                    #quick fix for large number
-                    f_concat = torch.log(torch.max(f_concat, torch.tensor(1e-9).to(config['device'] )))
+                f_pos = model.sentence_encoder.infoNCE_f(lmhead_output[i],rep[i] , temperature = config['infonce_temperature'])
+                f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes , temperature = config['infonce_temperature'])
+                f_concat = torch.cat([f_pos,f_neg.squeeze()],dim = 0)
+                #quick fix for large number
+                f_concat = torch.log(torch.max(f_concat, torch.tensor(1e-9).to(config['device'] )))
 
 
-                    infoNCE_loss += -torch.log(softmax(f_concat )[0])
-            except Exception as e:
-                # print(e.with_traceback())
-                print("no infoNCE_loss")
+                infoNCE_loss += -torch.log(softmax(f_concat )[0])
+            # except Exception as e:
+            #     # print(e.with_traceback())
+            #     print("no infoNCE_loss")
             infoNCE_loss /= rep.shape[0]
             # --- add info_nce loss ---
 
@@ -504,24 +504,24 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
              # --- add info_nce loss ---
             prototypes = model.prototypes.clone()
             infoNCE_loss = 0
-            try:
-                for i in range(rep.shape[0]):
-                    neg_prototypes = [prototypes[rel_id] for rel_id in seen_relations_ids if rel_id != labels[i].item()]
-                    neg_prototypes = torch.stack(neg_prototypes)
-                    neg_prototypes.requires_grad = False
-                    neg_prototypes = neg_prototypes.squeeze() # [num_neg_prototypes, dim]
+            # try:
+            for i in range(rep.shape[0]):
+                neg_prototypes = [prototypes[rel_id] for rel_id in seen_relations_ids if rel_id != labels[i].item()]
+                neg_prototypes = torch.stack(neg_prototypes)
+                neg_prototypes.requires_grad = False
+                neg_prototypes = neg_prototypes.squeeze() # [num_neg_prototypes, dim]
 
-                    f_pos = model.sentence_encoder.infoNCE_f(lmhead_output[i],rep[i] , temperature = config['infonce_temperature'])
-                    f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes , temperature = config['infonce_temperature'])
-                    f_concat = torch.cat([f_pos.unsqueeze(0),f_neg],dim = 0)
+                f_pos = model.sentence_encoder.infoNCE_f(lmhead_output[i],rep[i] , temperature = config['infonce_temperature'])
+                f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes , temperature = config['infonce_temperature'])
+                f_concat = torch.cat([f_pos,f_neg.squeeze()],dim = 0)
 
-                    #quick fix for large number
-                    f_concat = torch.log(torch.max(f_concat, torch.tensor(1e-9).to(config['device'] )))
+                #quick fix for large number
+                f_concat = torch.log(torch.max(f_concat, torch.tensor(1e-9).to(config['device'] )))
 
-                    infoNCE_loss += -torch.log(softmax(f_concat)[0])
-            except Exception as e:
-                # print(e.with_traceback())
-                print("no infoNCE_loss")
+                infoNCE_loss += -torch.log(softmax(f_concat)[0])
+            # except Exception as e:
+            #     # print(e.with_traceback())
+            #     print("no infoNCE_loss")
             infoNCE_loss /= rep.shape[0]
 
             # --- add info_nce loss ---
