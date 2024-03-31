@@ -1935,7 +1935,7 @@ class data_set_bert_prompt(Dataset):
             new_texts.append(rawtext)
             if ('unused' in e1) or ('unused' in e2):
                 print(rawtext)
-                quit()
+                # quit()
         input_ids = self.tokenizer2(new_texts, return_tensors='pt', padding='max_length', truncation=True, max_length=256)
         typelabels =  torch.tensor([item[11] for item in data])
         #print(masks.shape)
