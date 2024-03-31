@@ -638,15 +638,7 @@ if __name__ == '__main__':
         
         encoderforbase = get_peft_model(encoderforbase, peft_config)
 
-        if config["prompt"] == "hard-complex":
-            template = 'the relation between e1 and e2 is mask . '
-            print('Template: %s'%template)
-        elif config["prompt"] == "hard-simple":
-            template = 'e1 mask e2 . '
-            print('Template: %s'%template)
-        else:
-            template = None
-            print("no use soft prompt.")
+        template = None
         
         sampler = data_sampler_bert_prompt_deal_first_task_sckd(config, 'sss', template)
         modelforbase = proto_softmax_layer_bertmlm_prompt(encoderforbase, num_class=len(sampler.id2rel), id2rel=sampler.id2rel, drop=0, config=config)

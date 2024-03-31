@@ -1929,8 +1929,13 @@ class data_set_bert_prompt(Dataset):
         labels = torch.tensor([item[0] for item in data])
         new_texts = []
         for item in data:
-            rawtext = item[9] + '\n' + f"Relation between '{self.tokenizer1.decode(item[3], skip_special_tokens=True)}' and '{self.tokenizer1.decode(item[5], skip_special_tokens=True)}' is"
+            e1 = self.tokenizer1.decode(item[3], skip_special_tokens=True)
+            e2 = self.tokenizer1.decode(item[5], skip_special_tokens=True)
+            rawtext = item[9] + '\n' + f"Relation between '{e1}' and '{e2}' is"
             new_texts.append(rawtext)
+            if ('unused' in e1) or ('unused' in e2):
+                print(rawtext)
+                quit()
         input_ids = self.tokenizer2(new_texts, return_tensors='pt', padding='max_length', truncation=True, max_length=256)
         typelabels =  torch.tensor([item[11] for item in data])
         #print(masks.shape)
