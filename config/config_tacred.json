@@ -5,7 +5,7 @@
   "learning_rate_freeze": 0.00002,
   "embedding_dim": 300,
   "hidden_size": 100,
-  "batch_size": 16,
+  "batch_size": 32,
   "gradient_accumulation_steps": 4,
   "num_clusters": 8,
   "epoch": 2,
