@@ -660,7 +660,7 @@ if __name__ == '__main__':
 
         fr_all = []
         distored_all = []
-        for rou in range(1): #6 times different seeds to get average results
+        for rou in range(6): #6 times different seeds to get average results
 
             num_class = len(sampler.id2rel)
             print('random_seed: ' + str(config['random_seed'] + 100 * rou))
