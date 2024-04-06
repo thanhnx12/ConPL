@@ -5,6 +5,7 @@ import random
 import re
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
+import random
 
 class sequence_data_sampler(object):
 
@@ -1931,10 +1932,14 @@ class data_set_bert_prompt(Dataset):
         for item in data:
             e1 = self.tokenizer1.decode(item[3], skip_special_tokens=True)
             e2 = self.tokenizer1.decode(item[5], skip_special_tokens=True)
-            rawtext = item[9] + '\n' + f"Relation between '{e1}' and '{e2}' is"
-            new_texts.append(rawtext)
             if ('unused' in e1) or ('unused' in e2):
-                print(rawtext)
+                e1 = f'X_{random.randint(1,1000)}'
+                e2 = f'Y_{random.randint(1,1000)}'
+                rawtext = f"Relation between '{e1}' and '{e2}' is {item[9]}\n" + f"Relation between '{e1}' and '{e2}' is"
+            else:
+                rawtext = item[9] + '\n' + f"Relation between '{e1}' and '{e2}' is"
+            new_texts.append(rawtext)
+            
                 # quit()
         input_ids = self.tokenizer2(new_texts, return_tensors='pt', padding='max_length', truncation=True, max_length=256)
         typelabels =  torch.tensor([item[11] for item in data])
