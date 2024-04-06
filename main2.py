@@ -319,7 +319,7 @@ def train_model_with_hard_neg(config, model, mem_set, traindata, epochs, current
                     f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes , temperature = config['infonce_temperature'])
                     f_concat = torch.cat([f_pos.unsqueeze(0),f_neg],dim = 0)
 
-                    f_concat = torch.log(torch.max(f_concat , torch.tensor(1e-9).to(config.device)))
+                    f_concat = torch.log(torch.max(f_concat , torch.tensor(1e-9).to(config['device'])))
 
                     infoNCE_loss += -torch.log(softmax(f_concat)[0])
             except Exception as e:
@@ -467,7 +467,8 @@ def train_memory(config, model, mem_set, train_set, epochs, current_proto, origi
                     f_neg = model.sentence_encoder.infoNCE_f(lmhead_output[i],neg_prototypes , temperature = config['infonce_temperature'])
                     f_concat = torch.cat([f_pos.unsqueeze(0),f_neg],dim = 0)
 
-                    infoNCE_loss += -torch.log(softmax(f_concat/abs(f_concat).max())[0])
+                    f_concat = torch.log(torch.max(f_concat , torch.tensor(1e-9).to(config['device'])))
+                    infoNCE_loss += -torch.log(softmax(f_concat)[0])
             except Exception as e:
                 print(e.with_traceback())
                 print("no infoNCE_loss")
