@@ -1918,6 +1918,7 @@ class data_set_bert_prompt(Dataset):
         self.tokenizer2 = AutoTokenizer.from_pretrained('google/gemma-2b',
                                                         token="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",
                                                         use_fast=False)
+        self.tokenizer2.padding_side = 'right'
 
     def __len__(self):
         return len(self.data)
