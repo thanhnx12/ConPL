@@ -1917,6 +1917,7 @@ class data_set_bert_prompt(Dataset):
         self.tokenizer2 = AutoTokenizer.from_pretrained('meta-llama/Llama-2-7b-hf',
                                                         token="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",
                                                         use_fast=False)
+        self.tokenizer2.padding_side = 'right'
 
     def __len__(self):
         return len(self.data)
@@ -1928,8 +1929,18 @@ class data_set_bert_prompt(Dataset):
         #print(data[0])
         labels = torch.tensor([item[0] for item in data])
         new_texts = []
+        # for item in data:
+        #     rawtext = item[9] + '\n' + f"Relation between '{self.tokenizer1.decode(item[3], skip_special_tokens=True)}' and '{self.tokenizer1.decode(item[5], skip_special_tokens=True)}' is"
+        #     new_texts.append(rawtext)
         for item in data:
-            rawtext = item[9] + '\n' + f"Relation between '{self.tokenizer1.decode(item[3], skip_special_tokens=True)}' and '{self.tokenizer1.decode(item[5], skip_special_tokens=True)}' is"
+            e1 = self.tokenizer1.decode(item[3], skip_special_tokens=True)
+            e2 = self.tokenizer1.decode(item[5], skip_special_tokens=True)
+            if ('unused' in e1) or ('unused' in e2):
+                e1 = f'X_{random.randint(1,1000)}'
+                e2 = f'Y_{random.randint(1,1000)}'
+                rawtext = f"Relation between '{e1}' and '{e2}' is {item[9]}\n" + f"Relation between '{e1}' and '{e2}' is"
+            else:
+                rawtext = item[9] + '\n' + f"Relation between '{e1}' and '{e2}' is"
             new_texts.append(rawtext)
         input_ids = self.tokenizer2(new_texts, return_tensors='pt', padding='max_length', truncation=True, max_length=256)
         typelabels =  torch.tensor([item[11] for item in data])
