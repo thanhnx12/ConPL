@@ -9,7 +9,7 @@ import json
 import gc
 from tqdm import tqdm
 from sklearn.cluster import KMeans
-from encode import GemmaLMClassification
+from encode import LlamaLMClassification
 from dataprocess import data_sampler_bert_prompt_deal_first_task_sckd
 from model import proto_softmax_layer_bertmlm_prompt
 from dataprocess import get_data_loader_bert_prompt
@@ -624,7 +624,7 @@ if __name__ == '__main__':
     for m in range(donum):
         print(m)
 
-        encoderforbase = GemmaLMClassification.from_pretrained("meta-llama/Llama-2-7b-hf",
+        encoderforbase = LlamaLMClassification.from_pretrained("meta-llama/Llama-2-7b-hf",
                                                                token="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",
                                                                device_map='auto')
         peft_config = LoraConfig(task_type=TaskType.SEQ_CLS,
