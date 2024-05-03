@@ -38,5 +38,9 @@
   "prompt": "hard-simple",
   "infonce_temperature" : 1000.0,
   "infonce_lossfactor" : 0.5,
-  "mlm_lossfactor" : 0.1
+  "mlm_lossfactor" : 0.1,
+  "use_prefix_tuning" : true,
+  "prefix_tuning_num_virtual_tokens" : 20
+  
+
 }

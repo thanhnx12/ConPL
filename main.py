@@ -16,7 +16,7 @@ from dataprocess import get_data_loader_bert_prompt
 from util import set_seed
 import wandb
 import argparse
-
+import pickle
 wandb.login(
     anonymous = 'allow',
     relogin = True,
@@ -58,6 +58,29 @@ def eval_model(config, basemodel, test_set, mem_relations,seen_relations_ids):
     basemodel.train()
     return acc
 
+def save_representation(config, basemodel, test_set, mem_relations,seen_relations_ids):
+    basemodel.eval()
+    test_dataloader = get_data_loader_bert_prompt(config, test_set, shuffle=False, batch_size=30)
+    allnum= 0.0
+    correctnum = 0.0
+    res = []
+    with torch.no_grad():
+        for step, (labels, neg_labels, sentences, firstent, firstentindex, secondent, secondentindex, headid, tailid, rawtext, lengths,
+                typelabels, masks, mask_pos) in enumerate(test_dataloader):
+
+            sentences = sentences.to(config['device'])
+            masks = masks.to(config['device'])
+            mask_pos = mask_pos.to(config['device'])
+            logits, rep , lmhead_output = basemodel(sentences, masks, mask_pos)
+            res.append((labels,lmhead_output))
+    rep_dict = {}
+    for x in res:
+        for i in range(len(x[0])):
+            if int(x[0][i]) not in rep_dict:
+                rep_dict[int(x[0][i])] = []
+            rep_dict[int(x[0][i])].append(x[1][i].to('cpu'))
+    return res
+    
 def get_memory(config, model, proto_set):
     memset = []
     resset = []
@@ -647,6 +670,8 @@ if __name__ == '__main__':
             id2rel = sampler.id2rel
             rel2id = sampler.rel2id
             seen_test_data_by_task = []
+            task_1_test_data = []
+            all_test_data = []
             for steps, (training_data, valid_data, test_data,test_all_data, seen_relations,current_relations) in enumerate(sampler):
                 print('current training data num: ' + str(len(training_data)))
                 seen_relations_ids = [rel2id[relation] + 1 for relation in seen_relations] # seen relation (list of int) (include relation of current task)
@@ -724,6 +749,19 @@ if __name__ == '__main__':
                 results_average = np.array(results).mean() # average accuracy of all tasks after training on current task
                 wandb.log({f"Round {rou} Average Accuracy": results_average})
                 whole_acc.append(results_average)
+                
+                # if steps == 0:
+                    # task_1_test_data = test_data[:]
+                all_test_data.extend(test_data)
+                if steps == 7:
+                    lmhead_rep = save_representation(config, modelforbase, all_test_data, mem_relations,seen_relations_ids)
+                    with open('task7repall.pkl', 'wb') as f:
+                        pickle.dump(lmhead_rep, f)
+                # else:
+                #     lmhead_rep = save_representation(config, modelforbase, test_data, mem_relations,seen_relations_ids)
+                #     with open(f'task{steps}rep.pkl', 'wb') as f:
+                #         pickle.dump(lmhead_rep, f)
+
 
                 #compute whole accuarcy
                 seen_test_set = []

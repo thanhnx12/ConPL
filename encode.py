@@ -10,6 +10,8 @@ from model import base_model, embedding_layer, lstm_layer
 from word_tokenizer import WordTokenizer
 from transformers import BertTokenizer,BertModel
 from transformers import BertForMaskedLM
+from peft import  PrefixTuningConfig,get_peft_model
+
 class base_encoder(base_model):
 
     def __init__(self,
@@ -228,9 +230,25 @@ class BERTMLMSentenceEncoderPrompt(nn.Module):
         self.bert.resize_token_embeddings(len(self.tokenizer)) # 30522 + num_relation
         # --- resize token embedding --- #
 
+        # --- prefix tuning --- #
+        if config.use_prefix_tuning:
+            peft_config = PrefixTuningConfig(
+                    peft_type="PREFIX_TUNING",
+                    task_type="SEQ_2_SEQ_LM",
+                    num_virtual_tokens=config.prefix_tuning_num_virtual_tokens,
+                    token_dim=768,
+                    num_transformer_submodules=1,
+                    num_attention_heads=12,
+                    num_layers=12,
+                    encoder_hidden_size=config.encoder_output_size,
+                )
+            self.encoder = get_peft_model(self.encoder, peft_config)
+            self.encoder.print_trainable_parameters()
+        # --- prefix tuning --- #
 
         self.output_size = 768
         self.info_nce_fc = nn.Linear(len(self.tokenizer) , self.output_size)
+
     def forward(self, inputs, mask, mask_pos):
         outputs = self.bert(inputs, attention_mask=mask , output_hidden_states=True)
         last_hidden_state = outputs.hidden_states[-1]
